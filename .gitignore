@@ -1,0 +1,4 @@
+amana.db
+uploads/
+__pycache__/
+.env
