@@ -199,30 +199,30 @@ HTML_TEMPLATE = """
                 <p class="text-xs text-slate-500">هل اشتريت ملصق أمانة الذكي؟ أدخل كود التفعيل المطبوع على غلاف البطاقة لربطه بهاتفك فوراً.</p>
             </div>
 
-            <form action="/activate-sticker" method="POST" class="space-y-3 pt-2">
+            <form action="/activate-sticker" method="POST" autocomplete="off" class="space-y-3 pt-2">
                 <div>
                     <label class="block text-xs font-semibold mb-1 text-slate-600">رقم الملصق (Serial Code):</label>
-                    <input type="text" name="code" placeholder="مثال: AMN-1001" required class="w-full border border-slate-300 p-2 rounded-xl text-sm uppercase">
+                    <input type="text" name="code" placeholder="مثال: AMN-1001" autocomplete="off" required class="w-full border border-slate-300 p-2 rounded-xl text-sm uppercase">
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold mb-1 text-slate-600">كود التفعيل السرّي (PIN):</label>
-                    <input type="password" name="pin" placeholder="مثال: 5821" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                    <input type="password" name="pin" placeholder="مثال: 5821" autocomplete="new-password" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold mb-1 text-slate-600">اسم الغرض المُلصق عليه:</label>
-                    <input type="text" name="item_name" placeholder="مثال: مفاتيح سيارة / موبايل أيفون" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                    <input type="text" name="item_name" placeholder="مثال: مفاتيح سيارة / موبايل أيفون" autocomplete="off" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold mb-1 text-slate-600">رقم هاتفك للتواصل عند العثور:</label>
-                    <input type="tel" name="phone" placeholder="07xxxxxxxxx" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                    <input type="tel" name="phone" placeholder="07xxxxxxxxx" autocomplete="off" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold mb-1 text-slate-600">ملاحظة لمن يجد الغرض (اختياري):</label>
-                    <textarea name="note" placeholder="مثال: يرجى الاتصال بي فوراً وتوجد مكافأة مالية..." class="w-full border border-slate-300 p-2 rounded-xl text-sm h-16"></textarea>
+                    <textarea name="note" placeholder="مثال: يرجى الاتصال بي فوراً وتوجد مكافأة مالية..." autocomplete="off" class="w-full border border-slate-300 p-2 rounded-xl text-sm h-16"></textarea>
                 </div>
 
                 <button type="submit" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold hover:bg-emerald-800 transition shadow-md">
