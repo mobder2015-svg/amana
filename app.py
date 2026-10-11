@@ -153,7 +153,10 @@ HTML_TEMPLATE = """
 
         <!-- قائمة عرض البلاغات -->
         <div>
-            <h2 class="text-lg font-bold mb-3 text-slate-800">📋 البلاغات المسجلة</h2>
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-lg font-bold text-slate-800">📋 البلاغات المسجلة</h2>
+                <span class="text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-bold">إجمالي: $total_count$</span>
+            </div>
             <div class="space-y-3">
                 $reports_list_html$
             </div>
@@ -188,6 +191,7 @@ def home(
         query = query.filter(search_filter)
 
     reports = query.order_by(ReportDB.id.desc()).all()
+    total_count = db.query(ReportDB).count()
 
     match_alert_html = ""
     if match_id:
@@ -232,12 +236,17 @@ def home(
                 <span class="text-xs text-slate-500 block">الفئة: {r.category}</span>
                 {img_html}
                 {f'<p class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg">{r.description}</p>' if r.description else ''}
-                <div class="pt-2 border-t flex justify-between items-center gap-2">
-                    <a href="tel:{r.phone}" class="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-100 transition">
-                        📞 اتصل: {r.phone}
-                    </a>
-                    <a href="{wa_link}" target="_blank" class="bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl hover:bg-green-700 transition flex items-center gap-1">
-                        💬 مشاركة واتساب
+                <div class="pt-2 border-t flex flex-wrap justify-between items-center gap-2">
+                    <div class="flex gap-2">
+                        <a href="tel:{r.phone}" class="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-100 transition">
+                            📞 اتصل: {r.phone}
+                        </a>
+                        <a href="{wa_link}" target="_blank" class="bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-xl hover:bg-green-700 transition flex items-center gap-1">
+                            💬 مشاركة
+                        </a>
+                    </div>
+                    <a href="/delete/{r.id}" onclick="return confirm('هل تم العثور على الغرض وتريد حذف البلاغ نهائياً؟')" class="text-xs text-red-500 hover:text-red-700 underline font-semibold">
+                        🗑️ حذف البلاغ
                     </a>
                 </div>
             </div>
@@ -251,7 +260,8 @@ def home(
                                 .replace("$gov_query$", gov or '')\
                                 .replace("$selected_lost$", 'selected' if type == '🔴 مفقود' else '')\
                                 .replace("$selected_found$", 'selected' if type == '🟢 معثور عليه' else '')\
-                                .replace("$clear_filter_btn$", clear_btn)
+                                .replace("$clear_filter_btn$", clear_btn)\
+                                .replace("$total_count$", str(total_count))
 
     return HTMLResponse(content=page_content)
 
@@ -291,3 +301,11 @@ async def add_report(
     db.refresh(new_report)
 
     return RedirectResponse(url=f"/?match_id={new_report.id}", status_code=303)
+
+@app.get("/delete/{report_id}")
+def delete_report(report_id: int, db: Session = Depends(get_db)):
+    report = db.query(ReportDB).filter(ReportDB.id == report_id).first()
+    if report:
+        db.delete(report)
+        db.commit()
+    return RedirectResponse(url="/", status_code=303)
