@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, Form, Request, Query, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, or_
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, or_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime
@@ -11,7 +11,7 @@ import uuid
 import urllib.parse
 import json
 
-app = FastAPI(title="منصة أمانة للمفقودات والملصقات الذكية")
+app = FastAPI(title="منصة أمانة - خدمة ملصقات أمانة الذكية")
 
 # 1. إعداد قاعدة البيانات والملفات المرفوعة
 IS_VERCEL = os.environ.get("VERCEL", False)
@@ -23,7 +23,7 @@ engine = create_engine(f"sqlite:///{DB_FILE}", connect_args={"check_same_thread"
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# 2. جدول البلاغات
+# 2. جدول البلاغات العامة
 class ReportDB(Base):
     __tablename__ = "reports"
     id = Column(Integer, primary_key=True, index=True)
@@ -38,14 +38,16 @@ class ReportDB(Base):
     image_url = Column(String(255), nullable=True)     
     date = Column(DateTime, default=datetime.utcnow)
 
-# 3. جدول الملصقات الوقائية (QR Stickers)
+# 3. جدول ملصقات أمانة المطبوعة المفعّلة
 class StickerDB(Base):
     __tablename__ = "stickers"
     id = Column(Integer, primary_key=True, index=True)
-    item_name = Column(String(150), nullable=False)   # اسم الغرض (مثال: مفاتيح سيارة هيونداي)
-    phone = Column(String(20), nullable=False)       # رقم صاحب الغرض
-    pin = Column(String(10), nullable=False)         # رمز لإدارة الملصق
-    note = Column(Text, nullable=True)               # ملاحظة مكافأة أو تعليمات
+    code = Column(String(50), unique=True, index=True) # الكود المطبوع على الملصق
+    item_name = Column(String(150), nullable=True)     # اسم الغرض بعد التفعيل
+    phone = Column(String(20), nullable=True)         # رقم صاحب الملصق بعد التفعيل
+    pin = Column(String(10), nullable=True)           # كود التفعيل السرّي
+    note = Column(Text, nullable=True)                 # ملاحظة أو مكافأة
+    is_active = Column(Boolean, default=False)        # هل تم تفعيله بشراء الزبون؟
     date = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
@@ -72,26 +74,25 @@ HTML_TEMPLATE = """
 
     <header class="bg-emerald-700 text-white p-4 shadow-md text-center">
         <h1 class="text-2xl font-bold">منصة أَمانَة</h1>
-        <p class="text-sm text-emerald-100 mt-1">أمانتك ترجعلك.. بلّغ أو احمِ أشيائك بملصقات QR الذكية</p>
+        <p class="text-sm text-emerald-100 mt-1">أمانتك ترجعلك.. بلّغ عن مفقوداتك أو فعّل ملصقك الذكي</p>
     </header>
 
     <div class="max-w-xl mx-auto p-4 space-y-6">
 
         $match_alert_html$
 
-        <!-- قسم اختيار الخدمة (بلاغات أو ملصق QR) -->
+        <!-- قسم التبويب -->
         <div class="grid grid-cols-2 gap-2 bg-emerald-100/60 p-1.5 rounded-2xl border border-emerald-200">
             <button onclick="switchTab('reports')" id="tab-reports" class="py-2.5 px-3 rounded-xl font-bold text-xs bg-emerald-700 text-white shadow-sm transition">
                 📢 البلاغات العامة
             </button>
             <button onclick="switchTab('stickers')" id="tab-stickers" class="py-2.5 px-3 rounded-xl font-bold text-xs text-emerald-800 hover:bg-emerald-200/50 transition">
-                🏷️ ملصق أمانة الوقائي (QR)
+                🏷️ تفعيل ملصق أمانة الذكي
             </button>
         </div>
 
         <!-- قسم البلاغات -->
         <div id="section-reports" class="space-y-6">
-            <!-- قسم البحث والفلترة -->
             <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                 <h2 class="text-sm font-bold text-slate-700 flex items-center gap-1">🔍 البحث والفلترة السريعة</h2>
                 <form action="/" method="GET" class="space-y-2">
@@ -190,38 +191,42 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- قسم توليد ملصقات أمانة QR -->
+        <!-- قسم تفعيل الملصقات المشتراة -->
         <div id="section-stickers" class="hidden bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
             <div class="text-center space-y-1">
-                <span class="text-3xl">🏷️</span>
-                <h2 class="text-lg font-bold text-emerald-800">إنشاء ملصق أمانة الوقائي (QR Code)</h2>
-                <p class="text-xs text-slate-500">احمِ أشيائك قبل ضياعها! أنشئ ملصقاً وألصقه على (المفاتيح، الموبايل، المحفظة، حقيبة السفر)</p>
+                <span class="text-3xl">🔑</span>
+                <h2 class="text-lg font-bold text-emerald-800">تفعيل ملصق أمانة المشترى</h2>
+                <p class="text-xs text-slate-500">هل اشتريت ملصق أمانة الذكي؟ أدخل كود التفعيل المطبوع على غلاف البطاقة لربطه بهاتفك فوراً.</p>
             </div>
 
-            <form action="/create-sticker" method="POST" class="space-y-3 pt-2">
+            <form action="/activate-sticker" method="POST" class="space-y-3 pt-2">
                 <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-600">اسم الغرض المراد حمايته:</label>
-                    <input type="text" name="item_name" placeholder="مثال: مفاتيح سيارة هيونداي / حقيبة سفر سوداء" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
-                </div>
-
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-600">رقم هاتفك للتواصل عند العثور:</label>
-                        <input type="tel" name="phone" placeholder="07xxxxxxxxx" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-600">رمز سرّي للملصق:</label>
-                        <input type="password" name="pin" placeholder="مثال: 1234" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
-                    </div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-600">رقم الملصق (Serial Code):</label>
+                    <input type="text" name="code" placeholder="مثال: AMN-1001" required class="w-full border border-slate-300 p-2 rounded-xl text-sm uppercase">
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-600">رسالة لمن يجد الغرض (اختياري):</label>
-                    <textarea name="note" placeholder="مثال: يرجى الاتصال بي فوراً وتوجد مكافأة مالية لمن يعثر عليه..." class="w-full border border-slate-300 p-2 rounded-xl text-sm h-16"></textarea>
+                    <label class="block text-xs font-semibold mb-1 text-slate-600">كود التفعيل السرّي (PIN):</label>
+                    <input type="password" name="pin" placeholder="مثال: 5821" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
                 </div>
 
-                <button type="submit" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold hover:bg-emerald-800 transition shadow-md flex items-center justify-center gap-2">
-                    ✨ توليد ملصق أمانة وقابل للطباعة
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-600">اسم الغرض المُلصق عليه:</label>
+                    <input type="text" name="item_name" placeholder="مثال: مفاتيح سيارة / موبايل أيفون" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-600">رقم هاتفك للتواصل عند العثور:</label>
+                    <input type="tel" name="phone" placeholder="07xxxxxxxxx" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-600">ملاحظة لمن يجد الغرض (اختياري):</label>
+                    <textarea name="note" placeholder="مثال: يرجى الاتصال بي فوراً وتوجد مكافأة مالية..." class="w-full border border-slate-300 p-2 rounded-xl text-sm h-16"></textarea>
+                </div>
+
+                <button type="submit" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold hover:bg-emerald-800 transition shadow-md">
+                    ✨ تفعيل الملصق وربطه بـ QR
                 </button>
             </form>
         </div>
@@ -231,11 +236,9 @@ HTML_TEMPLATE = """
     <!-- نافذة تفاصيل البلاغ المنبثقة (Modal) -->
     <div id="detailsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh] relative border border-slate-100">
-            <button onclick="closeModal()" class="absolute top-4 left-4 bg-slate-100 text-slate-600 hover:bg-slate-200 w-8 h-8 rounded-full font-bold text-sm flex items-center justify-center transition">✕</button>
-            
+            <button onclick="closeModal()" class="absolute top-4 left-4 bg-slate-100 text-slate-600 hover:bg-slate-200 w-8 h-8 rounded-full font-bold text-sm flex items-center justify-center transition">✕</button>            
             <div id="modalHeader"></div>
             <div id="modalBody" class="space-y-3"></div>
-            
             <div id="modalFooter" class="pt-3 border-t flex justify-between items-center gap-2"></div>
         </div>
     </div>
@@ -326,57 +329,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# قالب صفحة عرض الملصق وطباعته (Print View)
-STICKER_PRINT_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ملصق أمانة الذكي - $item_name$</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @media print {
-            .no-print { display: none; }
-            body { background: white; }
-        }
-    </style>
-</head>
-<body class="bg-slate-100 flex items-center justify-center min-h-screen p-4">
-
-    <div class="space-y-4 max-w-sm w-full">
-        <div class="no-print flex justify-between items-center">
-            <a href="/" class="text-xs text-emerald-700 font-bold underline">← العودة للمنصة</a>
-            <button onclick="window.print()" class="bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md hover:bg-emerald-800 transition">
-                🖨️ طباعة الملصق / حفظ PDF
-            </button>
-        </div>
-
-        <!-- ملصق أمانة المطبوع -->
-        <div class="bg-white border-2 border-dashed border-emerald-600 p-5 rounded-3xl text-center space-y-3 shadow-lg relative overflow-hidden">
-            <div class="bg-emerald-700 text-white py-1 px-3 rounded-full text-[10px] font-bold inline-block">
-                🏷️ ملصق أمانة الذكي (أمانتك ترجعلك)
-            </div>
-            
-            <h3 class="font-bold text-slate-800 text-base">$item_name$</h3>
-
-            <div class="bg-slate-50 p-2 rounded-2xl inline-block border border-slate-200">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=$qr_url$" alt="QR Code" class="w-40 h-40 mx-auto">
-            </div>
-
-            <p class="text-xs text-slate-600 font-medium">إذا عثرت على هذا الغرض، يرجى مسح الكود أعلاه للتواصل المباشر مع صاحبه</p>
-            
-            <div class="pt-2 border-t border-slate-100 text-[10px] text-slate-400">
-                منصة أمانة - amana.vercel.app
-            </div>
-        </div>
-    </div>
-
-</body>
-</html>
-"""
-
-# قالب صفحة التواصل عند مسح الـ QR بكاميرا الهاتف
+# قالب صفحة التواصل المباشر عند مسح ملصق أمانة بالهاتف
 STICKER_SCAN_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -394,7 +347,7 @@ STICKER_SCAN_TEMPLATE = """
         </div>
 
         <div>
-            <span class="bg-emerald-100 text-emerald-800 text-xs px-3 py-1 rounded-full font-bold">معثور عليه بواسطة ملصق أمانة</span>
+            <span class="bg-emerald-100 text-emerald-800 text-xs px-3 py-1 rounded-full font-bold">معثور عليه بواسطة ملصق أمانة الذكي</span>
             <h1 class="text-xl font-bold text-slate-800 mt-2">$item_name$</h1>
         </div>
 
@@ -573,50 +526,56 @@ async def add_report(
 
     return RedirectResponse(url=f"/?match_id={new_report.id}", status_code=303)
 
-@app.post("/create-sticker")
-def create_sticker(
+# 4. مسار تفعيل الملصق بعد الشراء
+@app.post("/activate-sticker")
+def activate_sticker(
+    code: str = Form(...),
+    pin: str = Form(...),
     item_name: str = Form(...),
     phone: str = Form(...),
-    pin: str = Form(...),
     note: str = Form(None),
     db: Session = Depends(get_db)
 ):
-    sticker = StickerDB(
-        item_name=item_name,
-        phone=phone,
-        pin=pin,
-        note=note
-    )
-    db.add(sticker)
+    code_clean = code.strip().upper()
+    sticker = db.query(StickerDB).filter(StickerDB.code == code_clean).first()
+
+    if not sticker:
+        return RedirectResponse(url="/?error=" + urllib.parse.quote("رمز الملصق غير موجود! يرجى التأكد من كود البطاقة المشتراة."), status_code=303)
+
+    if sticker.is_active:
+        return RedirectResponse(url="/?error=" + urllib.parse.quote("هذا الملصق مفعّل مسبقاً!"), status_code=303)
+
+    if sticker.pin != pin.strip():
+        return RedirectResponse(url="/?error=" + urllib.parse.quote("كود التفعيل السرّي (PIN) غير صحيح!"), status_code=303)
+
+    # ربط وتفعيل الملصق
+    sticker.item_name = item_name
+    sticker.phone = phone
+    sticker.note = note
+    sticker.is_active = True
     db.commit()
-    db.refresh(sticker)
 
-    return RedirectResponse(url=f"/sticker/{sticker.id}", status_code=303)
+    return RedirectResponse(url=f"/qr/{sticker.code}", status_code=303)
 
-@app.get("/sticker/{sticker_id}", response_class=HTMLResponse)
-def view_sticker(sticker_id: int, request: Request, db: Session = Depends(get_db)):
-    sticker = db.query(StickerDB).filter(StickerDB.id == sticker_id).first()
+# 5. مسار مسح كود الـ QR للملصق
+@app.get("/qr/{code}", response_class=HTMLResponse)
+def scan_qr(code: str, db: Session = Depends(get_db)):
+    code_clean = code.strip().upper()
+    sticker = db.query(StickerDB).filter(StickerDB.code == code_clean).first()
+
     if not sticker:
-        return RedirectResponse(url="/", status_code=303)
+        return HTMLResponse(content="<h2 style='text-align:center;margin-top:50px;'>عذراً، هذا الملصق غير متاح أو غير مسجل.</h2>")
 
-    # تكوين رابط مسح الـ QR الخاص بهذا الملصق
-    host_url = str(request.base_url).rstrip('/')
-    qr_target_url = urllib.parse.quote(f"{host_url}/qr/{sticker.id}")
-
-    page_content = STICKER_PRINT_TEMPLATE.replace("$item_name$", sticker.item_name)\
-                                         .replace("$qr_url$", qr_target_url)
-
-    return HTMLResponse(content=page_content)
-
-@app.get("/qr/{sticker_id}", response_class=HTMLResponse)
-def scan_qr(sticker_id: int, db: Session = Depends(get_db)):
-    sticker = db.query(StickerDB).filter(StickerDB.id == sticker_id).first()
-    if not sticker:
-        return HTMLResponse(content="<h2 style='text-align:center;margin-top:50px;'>عذراً، هذا الملصق غير موجود أو تم إغلاقه.</h2>")
+    if not sticker.is_active:
+        return HTMLResponse(content=f"""
+        <div style='text-align:center;margin-top:50px;font-family:sans-serif;'>
+            <h2>🏷️ هذا الملصق جاهز ولم يتم تفعيله بعد!</h2>
+            <p>إذا كنت قد اشتريت هذا الملصق، يرجى تفعيله من الصفحة الرئيسية للمنصة بزيارة amana.vercel.app</p>
+        </div>
+        """)
 
     phone_clean = sticker.phone.lstrip('0')
     wa_msg = urllib.parse.quote(f"مرحباً، لقد عثرت على ({sticker.item_name}) المخصص له ملصق أمانة وتواصلت معك لإرجاعه.")
-    
     note_html = f'<div class="bg-amber-50 p-3 rounded-2xl border border-amber-200 text-xs text-amber-900 font-semibold">{sticker.note}</div>' if sticker.note else ''
 
     page_content = STICKER_SCAN_TEMPLATE.replace("$item_name$", sticker.item_name)\
@@ -626,6 +585,47 @@ def scan_qr(sticker_id: int, db: Session = Depends(get_db)):
                                         .replace("$note_html$", note_html)
 
     return HTMLResponse(content=page_content)
+
+# 6. لوحة تحكم مصغرة لتوليد ملصقات جديدة للطباعة والتوزيع التجاري
+@app.get("/admin/generate-codes", response_class=HTMLResponse)
+def admin_generate(count: int = 10, passkey: str = Query(""), db: Session = Depends(get_db)):
+    # رمز دخول الأدمن البسيط (يمكنك تغييره لمفتاحك السرّي)
+    if passkey != "salar2026":
+        return HTMLResponse(content="<h3 style='text-align:center;margin-top:50px;color:red;'>غير مصرح بالدخول! أضف ?passkey=salar2026 للرابط</h3>")
+
+    generated = []
+    import random
+    for i in range(count):
+        serial_num = f"AMN-{random.randint(10000, 99999)}"
+        pin_code = str(random.randint(1000, 9999))
+        
+        # التأكد من عدم التكرار
+        if not db.query(StickerDB).filter(StickerDB.code == serial_num).first():
+            new_sticker = StickerDB(code=serial_num, pin=pin_code, is_active=False)
+            db.add(new_sticker)
+            generated.append(f"<tr><td style='padding:8px;border:1px solid #ddd;'><b>{serial_num}</b></td><td style='padding:8px;border:1px solid #ddd;'>{pin_code}</td><td style='padding:8px;border:1px solid #ddd;'>https://amana.vercel.app/qr/{serial_num}</td></tr>")
+
+    db.commit()
+
+    table_rows = "".join(generated)
+    return HTMLResponse(content=f"""
+    <!DOCTYPE html>
+    <html dir='rtl'>
+    <head><title>لوحة توليد الأكواد - أمانة</title></head>
+    <body style='font-family:sans-serif;padding:20px;'>
+        <h2>✨ تم توليد {len(generated)} ملصق جديد بنجاح!</h2>
+        <p>استخدم أرقام Serial والـ PIN أدناه لطباعتها على كروت/ملصقات الشراء للزبائن:</p>
+        <table style='border-collapse:collapse;width:100%;max-w:600px;'>
+            <tr style='background:#f2f2f2;'>
+                <th style='padding:8px;border:1px solid #ddd;'>رقم الملصق (Serial)</th>
+                <th style='padding:8px;border:1px solid #ddd;'>كود التفعيل السرّي (PIN)</th>
+                <th style='padding:8px;border:1px solid #ddd;'>رابط الـ QR المطبوع</th>
+            </tr>
+            {table_rows}
+        </table>
+    </body>
+    </html>
+    """)
 
 @app.get("/delete/{report_id}")
 def delete_report(report_id: int, pin: Optional[str] = Query(None), db: Session = Depends(get_db)):
