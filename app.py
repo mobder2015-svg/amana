@@ -22,7 +22,7 @@ engine = create_engine(f"sqlite:///{DB_FILE}", connect_args={"check_same_thread"
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# 2. جدول البلاغات مع إضافة pin لحماية الحذف
+# 2. جدول البلاغات
 class ReportDB(Base):
     __tablename__ = "reports"
     id = Column(Integer, primary_key=True, index=True)
@@ -32,7 +32,7 @@ class ReportDB(Base):
     governorate = Column(String(50), nullable=False)   
     area = Column(String(100), nullable=False)         
     phone = Column(String(20), nullable=False)         
-    pin = Column(String(10), nullable=True, default="1234") # رمز الحذف
+    pin = Column(String(10), nullable=True, default="1234")
     description = Column(Text, nullable=True)          
     image_url = Column(String(255), nullable=True)     
     date = Column(DateTime, default=datetime.utcnow)
@@ -168,7 +168,74 @@ HTML_TEMPLATE = """
 
     </div>
 
+    <!-- نافذة تفاصيل البلاغ المنبثقة (Modal) -->
+    <div id="detailsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh] relative border border-slate-100">
+            <button onclick="closeModal()" class="absolute top-4 left-4 bg-slate-100 text-slate-600 hover:bg-slate-200 w-8 h-8 rounded-full font-bold text-sm flex items-center justify-center transition">✕</button>
+            
+            <div id="modalHeader"></div>
+            <div id="modalBody" class="space-y-3"></div>
+            
+            <div id="modalFooter" class="pt-3 border-t flex justify-between items-center gap-2"></div>
+        </div>
+    </div>
+
     <script>
+    function openModal(report) {
+        const modal = document.getElementById('detailsModal');
+        const modalHeader = document.getElementById('modalHeader');
+        const modalBody = document.getElementById('modalBody');
+        const modalFooter = document.getElementById('modalFooter');
+
+        const badgeBg = report.type.includes("مفقود") ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700";
+
+        modalHeader.innerHTML = `
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs px-2.5 py-1 rounded-full font-bold ${badgeBg}">${report.type}</span>
+                <span class="text-xs text-slate-400">📅 ${report.date}</span>
+            </div>
+            <h2 class="text-xl font-bold text-slate-800">${report.title}</h2>
+            <p class="text-xs text-slate-500">الفئة: ${report.category}</p>
+        `;
+
+        let imgHtml = report.image_url ? `<div class="rounded-2xl overflow-hidden border border-slate-200"><img src="${report.image_url}" class="w-full object-contain max-h-80 bg-slate-900/5"></div>` : '';
+
+        modalBody.innerHTML = `
+            ${imgHtml}
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60 space-y-1">
+                <p class="text-xs font-bold text-slate-700">📍 الموقع والمكان:</p>
+                <p class="text-sm text-slate-800">${report.governorate} - ${report.area}</p>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60 space-y-1">
+                <p class="text-xs font-bold text-slate-700">📝 التفاصيل الإضافية:</p>
+                <p class="text-sm text-slate-800 whitespace-pre-line">${report.description || 'لا توجد تفاصيل إضافية مكتوبة.'}</p>
+            </div>
+        `;
+
+        const shareText = encodeURIComponent(`بلاغ عبر منصة أمانة (${report.type}): ${report.title}\nالمكان: ${report.governorate} - ${report.area}\nللتواصل: ${report.phone}`);
+        const waLink = `https://api.whatsapp.com/send?text=${shareText}`;
+
+        modalFooter.innerHTML = `
+            <div class="flex gap-2">
+                <a href="tel:${report.phone}" class="bg-emerald-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition flex items-center gap-1 shadow-sm">
+                    📞 اتصل: ${report.phone}
+                </a>
+                <a href="${waLink}" target="_blank" class="bg-green-600 text-white text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-green-700 transition flex items-center gap-1 shadow-sm">
+                    💬 مشاركة
+                </a>
+            </div>
+            <button onclick="promptDelete(${report.id})" class="text-xs text-red-500 hover:text-red-700 underline font-semibold">
+                🗑️ حذف
+            </button>
+        `;
+
+        modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('detailsModal').classList.add('hidden');
+    }
+
     function promptDelete(reportId) {
         const pin = prompt("رجاءً أدخل الرمز السرّي الخاص بك لحذف البلاغ:");
         if (pin) {
@@ -236,13 +303,30 @@ def home(
         for r in reports:
             border_color = "border-r-red-500" if "مفقود" in r.type else "border-r-emerald-500"
             badge_bg = "bg-red-100 text-red-700" if "مفقود" in r.type else "bg-emerald-100 text-emerald-700"
-            img_html = f'<img src="{r.image_url}" class="w-full h-48 object-cover rounded-xl mt-2 border">' if r.image_url else ''
+            img_html = f'<img src="{r.image_url}" class="w-full h-44 object-cover rounded-xl mt-2 border">' if r.image_url else ''
 
             share_text = urllib.parse.quote(f"بلاغ عبر منصة أمانة ({r.type}): {r.title}\nالمكان: {r.governorate} - {r.area}\nللتواصل: {r.phone}")
             wa_link = f"https://api.whatsapp.com/send?text={share_text}"
 
+            # تجهيز بيانات البلاغ لتمريرها للنافذة المنبثقة
+            report_json = {
+                "id": r.id,
+                "type": r.type,
+                "category": r.category,
+                "title": r.title,
+                "governorate": r.governorate,
+                "area": r.area,
+                "phone": r.phone,
+                "description": r.description or "",
+                "image_url": r.image_url or "",
+                "date": r.date.strftime("%Y-%m-%d %H:%M") if r.date else ""
+            }
+            # تنظيف الاقتباسات لضمان عمل JavaScript
+            import json
+            json_str = json.dumps(report_json, ensure_ascii=False).replace('"', '&quot;')
+
             cards_html += f"""
-            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 border-r-4 {border_color} space-y-2">
+            <div onclick="openModal({json_str})" class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 border-r-4 {border_color} space-y-2 cursor-pointer hover:shadow-md transition">
                 <div class="flex justify-between items-center">
                     <span class="text-xs px-2.5 py-1 rounded-full font-bold {badge_bg}">{r.type}</span>
                     <span class="text-xs text-slate-400">📍 {r.governorate} - {r.area}</span>
@@ -250,8 +334,9 @@ def home(
                 <h3 class="font-bold text-base text-slate-800">{r.title}</h3>
                 <span class="text-xs text-slate-500 block">الفئة: {r.category}</span>
                 {img_html}
-                {f'<p class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg">{r.description}</p>' if r.description else ''}
-                <div class="pt-2 border-t flex flex-wrap justify-between items-center gap-2">
+                {f'<p class="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg line-clamp-2">{r.description}</p>' if r.description else ''}
+                
+                <div class="pt-2 border-t flex flex-wrap justify-between items-center gap-2" onclick="event.stopPropagation()">
                     <div class="flex gap-2">
                         <a href="tel:{r.phone}" class="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-100 transition">
                             📞 اتصل: {r.phone}
@@ -261,7 +346,7 @@ def home(
                         </a>
                     </div>
                     <button onclick="promptDelete({r.id})" class="text-xs text-red-500 hover:text-red-700 underline font-semibold cursor-pointer">
-                        🗑️ حذف البلاغ
+                        🗑️ حذف
                     </button>
                 </div>
             </div>
