@@ -10,10 +10,9 @@ import os
 import uuid
 import urllib.parse
 
-# تعريف التطبيق في السطر الأول ليتعرف عليه Vercel فوراً
 app = FastAPI(title="منصة أمانة للمفقودات")
 
-# 1. إعداد قاعدة البيانات والملفات المرفوعة لتتوافق مع بيئة Vercel (المجلد /tmp)
+# 1. إعداد قاعدة البيانات والملفات المرفوعة
 IS_VERCEL = os.environ.get("VERCEL", False)
 DB_FILE = "/tmp/amana.db" if IS_VERCEL else "amana.db"
 UPLOAD_DIR = "/tmp/uploads" if IS_VERCEL else "uploads"
@@ -23,18 +22,19 @@ engine = create_engine(f"sqlite:///{DB_FILE}", connect_args={"check_same_thread"
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# 2. جدول البلاغات
+# 2. جدول البلاغات مع إضافة pin لحماية الحذف
 class ReportDB(Base):
     __tablename__ = "reports"
     id = Column(Integer, primary_key=True, index=True)
-    type = Column(String(20), nullable=False)         # مفقود أو معثور عليه
-    category = Column(String(50), nullable=False)      # الفئة
-    title = Column(String(150), nullable=False)        # اسم الشيء أو الوثيقة
-    governorate = Column(String(50), nullable=False)   # المحافظة
-    area = Column(String(100), nullable=False)         # المنطقة
-    phone = Column(String(20), nullable=False)         # رقم الهاتف للتواصل
-    description = Column(Text, nullable=True)          # تفاصيل إضافية
-    image_url = Column(String(255), nullable=True)     # مسار الصورة
+    type = Column(String(20), nullable=False)         
+    category = Column(String(50), nullable=False)      
+    title = Column(String(150), nullable=False)        
+    governorate = Column(String(50), nullable=False)   
+    area = Column(String(100), nullable=False)         
+    phone = Column(String(20), nullable=False)         
+    pin = Column(String(10), nullable=True, default="1234") # رمز الحذف
+    description = Column(Text, nullable=True)          
+    image_url = Column(String(255), nullable=True)     
     date = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
@@ -48,7 +48,6 @@ def get_db():
     finally:
         db.close()
 
-# 3. قالب الواجهة العربية المتكاملة
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -60,7 +59,6 @@ HTML_TEMPLATE = """
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans">
 
-    <!-- شريط العنوان -->
     <header class="bg-emerald-700 text-white p-4 shadow-md text-center">
         <h1 class="text-2xl font-bold">منصة أَمانَة</h1>
         <p class="text-sm text-emerald-100 mt-1">أمانتك ترجعلك.. بلّغ عن مفقوداتك أو عثوراتك بسهولة</p>
@@ -75,7 +73,7 @@ HTML_TEMPLATE = """
             <h2 class="text-sm font-bold text-slate-700 flex items-center gap-1">🔍 البحث والفلترة السريعة</h2>
             <form action="/" method="GET" class="space-y-2">
                 <div class="flex gap-2">
-                    <input type="text" name="q" value="$search_query$" placeholder="ابحث بالاسم أو التفاصيل (مثل: بطاقة موحدة...)" class="w-full border border-slate-300 p-2 rounded-xl text-sm bg-slate-50">
+                    <input type="text" name="q" value="$search_query$" placeholder="ابحث بالاسم أو التفاصيل..." class="w-full border border-slate-300 p-2 rounded-xl text-sm bg-slate-50">
                     <button type="submit" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-900 transition">بحث</button>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
@@ -105,17 +103,17 @@ HTML_TEMPLATE = """
                     <div>
                         <label class="block text-xs font-semibold mb-1 text-slate-600">الفئة:</label>
                         <select name="category" class="w-full border border-slate-300 p-2 rounded-xl text-sm bg-slate-50">
-                            <option value="🪪 وثائق وهويات">🪪 وثائق وهويات</option>
-                            <option value="📱 أجهزة وموبايلات">📱 أجهزة وموبايلات</option>
-                            <option value="🔑 مفاتيح ومقتنيات">🔑 مفاتيح ومقتنيات</option>
-                            <option value="🐾 حيوانات أليفة">🐾 حيوانات أليفة</option>
-                            <option value="📦 أشياء أخرى">📦 أشياء أخرى</option>
+                            <option value="وثائق وهويات">📄 وثائق وهويات</option>
+                            <option value="أجهزة وموبايلات">📱 أجهزة وموبايلات</option>
+                            <option value="مفاتيح ومقتنيات">🔑 مفاتيح ومقتنيات</option>
+                            <option value="حيوانات أليفة">🐾 حيوانات أليفة</option>
+                            <option value="أشياء أخرى">📦 أشياء أخرى</option>
                         </select>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-600">عنوان البلاغ (مثال: بطاقة موحدة باسم محمد...):</label>
+                    <label class="block text-xs font-semibold mb-1 text-slate-600">عنوان البلاغ (مثال: بطاقة موحدة باسم...):</label>
                     <input type="text" name="title" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
                 </div>
 
@@ -130,9 +128,15 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-600">رقم الهاتف للتواصل المباشر:</label>
-                    <input type="tel" name="phone" placeholder="07xxxxxxxxx" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold mb-1 text-slate-600">رقم الهاتف:</label>
+                        <input type="tel" name="phone" placeholder="07xxxxxxxxx" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1 text-slate-600">رمز سرّي لحذف البلاغ لاحقاً:</label>
+                        <input type="password" name="pin" placeholder="مثال: 1234" required class="w-full border border-slate-300 p-2 rounded-xl text-sm">
+                    </div>
                 </div>
 
                 <div>
@@ -164,6 +168,14 @@ HTML_TEMPLATE = """
 
     </div>
 
+    <script>
+    function promptDelete(reportId) {
+        const pin = prompt("رجاءً أدخل الرمز السرّي الخاص بك لحذف البلاغ:");
+        if (pin) {
+            window.location.href = `/delete/${reportId}?pin=${encodeURIComponent(pin)}`;
+        }
+    }
+    </script>
 </body>
 </html>
 """
@@ -174,6 +186,7 @@ def home(
     type: Optional[str] = Query(None),
     gov: Optional[str] = Query(None),
     match_id: Optional[int] = Query(None),
+    error: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     query = db.query(ReportDB)
@@ -194,7 +207,9 @@ def home(
     total_count = db.query(ReportDB).count()
 
     match_alert_html = ""
-    if match_id:
+    if error:
+        match_alert_html = f'<div class="bg-red-50 border-r-4 border-red-500 p-3 rounded-xl text-red-800 text-xs font-bold mb-3">{error}</div>'
+    elif match_id:
         new_report = db.query(ReportDB).filter(ReportDB.id == match_id).first()
         if new_report:
             opposite_type = "🔴 مفقود" if "معثور" in new_report.type else "🟢 معثور عليه"
@@ -245,9 +260,9 @@ def home(
                             💬 مشاركة
                         </a>
                     </div>
-                    <a href="/delete/{r.id}" onclick="return confirm('هل تم العثور على الغرض وتريد حذف البلاغ نهائياً؟')" class="text-xs text-red-500 hover:text-red-700 underline font-semibold">
+                    <button onclick="promptDelete({r.id})" class="text-xs text-red-500 hover:text-red-700 underline font-semibold cursor-pointer">
                         🗑️ حذف البلاغ
-                    </a>
+                    </button>
                 </div>
             </div>
             """
@@ -273,6 +288,7 @@ async def add_report(
     governorate: str = Form(...),
     area: str = Form(...),
     phone: str = Form(...),
+    pin: str = Form(...),
     description: str = Form(None),
     image: UploadFile = File(None),
     db: Session = Depends(get_db)
@@ -293,6 +309,7 @@ async def add_report(
         governorate=governorate,
         area=area,
         phone=phone,
+        pin=pin,
         description=description,
         image_url=image_url
     )
@@ -303,9 +320,11 @@ async def add_report(
     return RedirectResponse(url=f"/?match_id={new_report.id}", status_code=303)
 
 @app.get("/delete/{report_id}")
-def delete_report(report_id: int, db: Session = Depends(get_db)):
+def delete_report(report_id: int, pin: Optional[str] = Query(None), db: Session = Depends(get_db)):
     report = db.query(ReportDB).filter(ReportDB.id == report_id).first()
     if report:
+        if report.pin and report.pin != pin:
+            return RedirectResponse(url="/?error=" + urllib.parse.quote("الرمز السرّي غير صحيح! لم يتم حذف البلاغ."), status_code=303)
         db.delete(report)
         db.commit()
     return RedirectResponse(url="/", status_code=303)
