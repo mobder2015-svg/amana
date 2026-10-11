@@ -586,12 +586,14 @@ def scan_qr(code: str, db: Session = Depends(get_db)):
 
     return HTMLResponse(content=page_content)
 
-# 6. لوحة تحكم مصغرة لتوليد ملصقات جديدة للطباعة والتوزيع التجاري
+# 6. لوحة تحكم مصغرة لتوليد ملصقات جديدة للطباعة والتوزيع التجاري (توليد الدومين ديناميكياً)
 @app.get("/admin/generate-codes", response_class=HTMLResponse)
-def admin_generate(count: int = 10, passkey: str = Query(""), db: Session = Depends(get_db)):
-    # رمز دخول الأدمن البسيط (يمكنك تغييره لمفتاحك السرّي)
+def admin_generate(request: Request, count: int = 10, passkey: str = Query(""), db: Session = Depends(get_db)):
     if passkey != "salar2026":
         return HTMLResponse(content="<h3 style='text-align:center;margin-top:50px;color:red;'>غير مصرح بالدخول! أضف ?passkey=salar2026 للرابط</h3>")
+
+    # جلب رابط الموقع الحقيقي ديناميكياً
+    base_domain = str(request.base_url).rstrip('/')
 
     generated = []
     import random
@@ -599,11 +601,10 @@ def admin_generate(count: int = 10, passkey: str = Query(""), db: Session = Depe
         serial_num = f"AMN-{random.randint(10000, 99999)}"
         pin_code = str(random.randint(1000, 9999))
         
-        # التأكد من عدم التكرار
         if not db.query(StickerDB).filter(StickerDB.code == serial_num).first():
             new_sticker = StickerDB(code=serial_num, pin=pin_code, is_active=False)
             db.add(new_sticker)
-            generated.append(f"<tr><td style='padding:8px;border:1px solid #ddd;'><b>{serial_num}</b></td><td style='padding:8px;border:1px solid #ddd;'>{pin_code}</td><td style='padding:8px;border:1px solid #ddd;'>https://amana.vercel.app/qr/{serial_num}</td></tr>")
+            generated.append(f"<tr><td style='padding:8px;border:1px solid #ddd;'><b>{serial_num}</b></td><td style='padding:8px;border:1px solid #ddd;'>{pin_code}</td><td style='padding:8px;border:1px solid #ddd;'>{base_domain}/qr/{serial_num}</td></tr>")
 
     db.commit()
 
